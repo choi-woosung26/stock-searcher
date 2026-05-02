@@ -2,3 +2,4 @@ streamlit
 tradingview-screener
 pandas
 requests
+lxml

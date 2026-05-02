@@ -1,5 +1,5 @@
 import streamlit as st
-from tradingview_screener import Query, Column
+from tradingview_screener import Query, col, stocks
 import pandas as pd
 
 # 앱 제목과 아이콘
@@ -14,24 +14,28 @@ market = st.sidebar.selectbox("대상 시장", ["KOREA", "AMERICA"], index=0)
 min_vol = st.sidebar.number_input("최소 거래량", value=100000, step=10000)
 
 # 검색 실행 함수
-def run_scanner():
-    q = Query().from_(market.lower()).select(
-        'name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'high_52week'
+def run_scanner(market, min_vol):
+    market_key = "korea" if market == "KOREA" else "america"
+
+    count, data = (
+        stocks(market_key)
+        .select('name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'high_52week')
+        .where(
+            col('volume') > min_vol,
+            col('close') > col('SMA20'),             # 20일 이평선 위
+            col('close') > col('BB.upper'),          # 볼린저밴드 상단 돌파
+            col('close') >= col('high_52week') * 0.95  # 52주 신고가 근처(5% 이내)
+        )
+        .get_scanner_data()
     )
-    
-    # 조건 설정
-    q = q.where(
-        Column('volume') > min_vol,
-        Column('close') > Column('SMA20'),      # 20일 이평선 위
-        Column('close') > Column('BB.upper'),   # 볼린저밴드 상단 돌파
-        Column('close') >= Column('high_52week') * 0.95  # 52주 신고가 근처(5% 이내)
-    )
-    
-    return q.get_scanner_data()
+    return count, data
 
 # 차트 URL 생성 함수
 def get_chart_url(ticker, market):
-    if market == "KOREA":
+    # ticker는 이미 "KRX:001440" 형태로 오는 경우가 많음
+    if ":" in str(ticker):
+        return f"https://www.tradingview.com/chart/?symbol={ticker}"
+    elif market == "KOREA":
         return f"https://www.tradingview.com/chart/?symbol=KRX:{ticker}"
     else:
         return f"https://www.tradingview.com/chart/?symbol={ticker}"
@@ -40,35 +44,31 @@ def get_chart_url(ticker, market):
 if st.button("종목 검색 시작"):
     with st.spinner("분석 중... 잠시만 기다려주세요."):
         try:
-            count, data = run_scanner()  # ← 튜플로 반환됩니다
+            count, data = run_scanner(market, min_vol)
+
             if data is not None and not data.empty:
                 st.success(f"조건에 맞는 종목 {len(data)}개를 찾았습니다!")
 
-                # 차트 링크 열 추가
-                data['차트'] = data['name'].apply(
-                    lambda ticker: f"[📊 차트 열기](https://www.tradingview.com/chart/?symbol={'KRX:' if market == 'KOREA' else ''}{ticker})"
-                )
-
                 # 표 출력
+                display_cols = [c for c in ['name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'high_52week'] if c in data.columns]
+                fmt_cols = {c: "{:.2f}" for c in ['close', 'change', 'SMA20', 'BB.upper'] if c in data.columns}
                 st.dataframe(
-                    data.style.format(
-                        subset=['close', 'change', 'SMA20', 'BB.upper'],
-                        formatter="{:.2f}"
-                    ),
+                    data[display_cols].style.format(fmt_cols),
                     use_container_width=True
                 )
 
-                # 차트 바로가기 버튼 목록
+                # 차트 바로가기 버튼
                 st.subheader("📊 차트 바로가기")
-                cols = st.columns(4)  # 한 줄에 4개씩 배치
+                cols_ui = st.columns(4)
                 for i, (_, row) in enumerate(data.iterrows()):
-                    ticker = row['name']
+                    ticker = row.get('ticker', row.get('name', ''))
                     url = get_chart_url(ticker, market)
-                    with cols[i % 4]:
+                    with cols_ui[i % 4]:
                         st.link_button(f"📈 {ticker}", url)
 
             else:
                 st.warning("조건에 맞는 종목이 현재 없습니다.")
+
         except Exception as e:
             st.error(f"오류가 발생했습니다: {e}")
 

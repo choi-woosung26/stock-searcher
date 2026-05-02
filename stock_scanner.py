@@ -12,23 +12,20 @@ st.markdown("이동평균선 돌파 · 신고가 근처 종목을 찾습니다."
 # ── KRX에서 한글 종목명 직접 가져오기 ─────────────────────
 @st.cache_data(ttl=3600)
 def load_krx_name_map():
-    """KRX 데이터시스템에서 전종목 한글명 + ETF/스팩 제외 목록 로딩"""
     try:
-        # KRX OTP 발급
         otp_url = "http://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd"
-        headers = {"Referer": "http://data.krx.co.kr/"}
-
-        # KOSPI + KOSDAQ 전종목 조회
+        headers = {
+            "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020101",
+            "User-Agent": "Mozilla/5.0"
+        }
         otp_data = {
             "mktId": "ALL",
             "share": "1",
-            "money": "1",
             "csvxls_isNo": "false",
             "name": "fileDown",
             "url": "dbms/MDC/STAT/standard/MDCSTAT01901"
         }
         otp = requests.post(otp_url, data=otp_data, headers=headers).text
-
         down_url = "http://data.krx.co.kr/comm/fileDn/download_csv/download.cmd"
         resp = requests.post(down_url, data={"code": otp}, headers=headers)
         resp.encoding = "euc-kr"
@@ -36,37 +33,31 @@ def load_krx_name_map():
         from io import StringIO
         df = pd.read_csv(StringIO(resp.text))
 
-        # 컬럼 확인 후 매핑
-        # 보통 컬럼: 표준코드, 단축코드, 한글 종목명, 영문 종목명, 시장구분, 소속부, 증권구분, ...
-        code_col = [c for c in df.columns if '단축' in c or '코드' in c and '표준' not in c][0]
-        name_col = [c for c in df.columns if '한글' in c and '종목' in c][0]
-        type_col = [c for c in df.columns if '증권구분' in c or '구분' in c][-1]
+        # ✅ 컬럼명 고정 (KRX CSV 실제 컬럼명)
+        code_col = '단축코드'
+        name_col = '한글 종목약명'
+        type_col = '증권구분'
 
-        name_map = dict(zip(df[code_col].astype(str).str.zfill(6), df[name_col]))
+        df[code_col] = df[code_col].astype(str).str.zfill(6)
 
-        # 제외 종목 (ETF, ETN, 스팩, 리츠, 우선주 등)
+        name_map = dict(zip(df[code_col], df[name_col]))
+
         exclude_set = set()
         for _, row in df.iterrows():
             code = str(row[code_col]).zfill(6)
             name = str(row[name_col])
-            sec_type = str(row[type_col]) if type_col else ''
+            sec_type = str(row.get(type_col, ''))
 
-            # 증권구분이 주권(보통주)이 아닌 경우 제외
-            if sec_type and '주권' not in sec_type:
+            # 보통주(주권)만 남기고 나머지 제외
+            if '주권' not in sec_type:
                 exclude_set.add(code)
                 continue
-
-            # 스팩 제외
             if '스팩' in name or 'SPAC' in name.upper():
                 exclude_set.add(code)
                 continue
-
-            # 우선주 제외 (코드 끝자리 5)
             if code.endswith('5'):
                 exclude_set.add(code)
                 continue
-
-            # 기타 제외 키워드
             exclude_keywords = ['리츠', '인프라', '환기', '수익증권', 'ETF', 'ETN', 'ELW']
             if any(kw in name for kw in exclude_keywords):
                 exclude_set.add(code)
@@ -74,6 +65,7 @@ def load_krx_name_map():
         return name_map, exclude_set
 
     except Exception as e:
+        st.warning(f"종목 정보 로딩 실패: {e}")
         return {}, set()
 
 # ── 사이드바 설정 ──────────────────────────────────

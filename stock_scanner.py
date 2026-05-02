@@ -13,42 +13,40 @@ st.markdown("이동평균선 돌파 · 신고가 근처 종목을 찾습니다."
 @st.cache_data(ttl=3600)
 def load_krx_name_map():
     try:
-        otp_url = "http://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd"
+        from io import BytesIO
+
+        gen_url = 'http://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd'
         headers = {
-            "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020101",
-            "User-Agent": "Mozilla/5.0"
+            'Referer': 'http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020101',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
         }
-        otp_data = {
-            "mktId": "ALL",
-            "share": "1",
-            "csvxls_isNo": "false",
-            "name": "fileDown",
-            "url": "dbms/MDC/STAT/standard/MDCSTAT01901"
+        params = {
+            'mktId': 'ALL',
+            'share': '1',
+            'csvxls_isNo': 'false',
+            'name': 'fileDown',
+            'url': 'dbms/MDC/STAT/standard/MDCSTAT01901'
         }
-        otp = requests.post(otp_url, data=otp_data, headers=headers).text
-        down_url = "http://data.krx.co.kr/comm/fileDn/download_csv/download.cmd"
-        resp = requests.post(down_url, data={"code": otp}, headers=headers)
-        resp.encoding = "euc-kr"
 
-        from io import StringIO
-        df = pd.read_csv(StringIO(resp.text))
+        # ✅ GET으로 OTP 받기
+        r = requests.get(url=gen_url, params=params, headers=headers)
 
-        # ✅ 컬럼명 고정 (KRX CSV 실제 컬럼명)
-        code_col = '단축코드'
-        name_col = '한글 종목약명'
-        type_col = '증권구분'
+        # ✅ BytesIO + cp949로 CSV 읽기
+        down_url = 'http://data.krx.co.kr/comm/fileDn/download_csv/download.cmd'
+        r2 = requests.post(url=down_url, data={'code': r.content}, headers=headers)
+        df = pd.read_csv(BytesIO(r2.content), encoding='cp949')
 
-        df[code_col] = df[code_col].astype(str).str.zfill(6)
-
-        name_map = dict(zip(df[code_col], df[name_col]))
+        name_map = dict(zip(
+            df['단축코드'].astype(str).str.zfill(6),
+            df['한글 종목약명']
+        ))
 
         exclude_set = set()
         for _, row in df.iterrows():
-            code = str(row[code_col]).zfill(6)
-            name = str(row[name_col])
-            sec_type = str(row.get(type_col, ''))
+            code = str(row['단축코드']).zfill(6)
+            name = str(row['한글 종목약명'])
+            sec_type = str(row.get('증권구분', ''))
 
-            # 보통주(주권)만 남기고 나머지 제외
             if '주권' not in sec_type:
                 exclude_set.add(code)
                 continue
@@ -58,9 +56,10 @@ def load_krx_name_map():
             if code.endswith('5'):
                 exclude_set.add(code)
                 continue
-            exclude_keywords = ['리츠', '인프라', '환기', '수익증권', 'ETF', 'ETN', 'ELW']
-            if any(kw in name for kw in exclude_keywords):
-                exclude_set.add(code)
+            for kw in ['리츠', '인프라', '환기', '수익증권']:
+                if kw in name:
+                    exclude_set.add(code)
+                    break
 
         return name_map, exclude_set
 

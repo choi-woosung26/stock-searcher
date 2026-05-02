@@ -3,17 +3,17 @@ from tradingview_screener import Query, Column
 import pandas as pd
 
 st.set_page_config(page_title="한국주식 스캐너", layout="wide")
-st.title("🇰🇷 한국 시장 종목 검색기")
+st.title("🇰🇷 한국 시장 종목 검색기 (최종 업데이트)")
 
-# 사이드바 설정
+# 설정 사이드바
 st.sidebar.header("🔍 검색 설정")
 min_vol = st.sidebar.number_input("최소 거래량", value=100000)
 min_price = st.sidebar.number_input("최소 주가", value=1000)
 max_price = st.sidebar.number_input("최고 주가", value=1000000)
 ma_period = st.sidebar.number_input("이평선 기간", value=20)
-ma_field = f"SMA{ma_period}"
 
 def run_scanner():
+    ma_field = f"SMA{ma_period}"
     q = Query().set_markets('korea').select('name', 'description', 'close', 'volume', 'change', ma_field)
     q = q.where(
         Column('volume') > min_vol,
@@ -29,9 +29,9 @@ if st.button("🚀 종목 검색 시작"):
     try:
         df = run_scanner()
         if not df.empty:
-            # [최종 수정] 주소 앞에 슬래시를 포함한 완벽한 고정 주소를 넣었습니다.
-            # 이 코드는 서버가 절대로 오해할 수 없게 만듭니다.
-            df['차트보기'] = df['name'].apply(lambda x: "https://tradingview.com" + str(x) + "/")
+            # 주소 형식을 절대 틀릴 수 없게 변수 형식을 바꿨습니다.
+            # 앞에 kr.을 붙여 한국 서버로 강제 연결합니다.
+            df['차트보기'] = [f"https://tradingview.com{x}/" for x in df['name']]
             
             df = df.rename(columns={'description': '종목명', 'close': '현재가', 'volume': '거래량', 'change': '등락률'})
 

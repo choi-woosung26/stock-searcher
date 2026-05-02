@@ -11,8 +11,10 @@ market_choice = st.sidebar.selectbox("대상 시장", ["korea", "america"], inde
 min_vol = st.sidebar.number_input("최소 거래량", value=100000)
 
 def run_scanner():
-    # 최신 라이브러리 문법으로 수정
-    q = Query().set_markets(market_choice).select('name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'high_52week')
+    # 필드명을 가장 안전한 기본형으로 변경 (high_52week -> high_52_week)
+    q = Query().set_markets(market_choice).select(
+        'name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'high_52_week'
+    )
     
     # 조건 설정
     q = q.where(
@@ -22,7 +24,6 @@ def run_scanner():
     )
     
     # 데이터 가져오기
-    # 최신 버전은 (count, data) 형태의 튜플을 반환하므로 데이터만 추출
     _, df = q.get_scanner_data()
     return df
 
@@ -33,9 +34,12 @@ if st.button("종목 검색 시작"):
             
             if df is not None and not df.empty:
                 st.success(f"{len(df)}개의 종목을 찾았습니다!")
+                # 컬럼명 한글로 보기 좋게 변경
+                df.columns = ['티커', '현재가', '거래량', '변동률', '20일이평', 'BB상단', '52주신고가']
                 st.dataframe(df, use_container_width=True)
             else:
-                st.warning("조건에 맞는 종목이 없습니다.")
+                st.warning("조건에 맞는 종목이 없습니다. (필터를 조정해보세요)")
         except Exception as e:
+            # 만약 또 필드명 에러가 나면 high_52_week를 제외하고 시도하도록 안내
             st.error(f"오류 발생: {e}")
-            st.info("최신 라이브러리 문법으로 코드를 수정했습니다. 다시 시도해 보세요.")
+            st.info("💡 '52주 신고가' 필드명이 시장마다 다를 수 있습니다. 오류가 반복되면 해당 필드를 제거해 드릴게요.")

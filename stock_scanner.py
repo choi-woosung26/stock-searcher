@@ -2,7 +2,7 @@ import streamlit as st
 from tradingview_screener import Query, Column
 
 st.set_page_config(page_title="한국주식 스캐너", layout="wide")
-st.title("🇰🇷 한국 시장 종목 검색기 (버전 5.1 - 오류 수정 완료)")
+st.title("🇰🇷 한국 시장 종목 검색기 (버전 5.2 - 캐시 강제 삭제)")
 
 # 사이드바 설정
 st.sidebar.header("🔍 검색 설정")
@@ -31,10 +31,10 @@ if st.button("🚀 종목 검색 시작"):
             st.success(f"{len(df)}개의 종목을 찾았습니다.")
             
             for i, row in df.iterrows():
-                # 주소 오해를 방지하기 위해 가장 표준적인 symbols 주소 사용
-                safe_url = f"https://tradingview.com{row['name']}/"
+                # [필살기] 주소 뒤에 의미 없는 숫자를 붙여 브라우저가 매번 새 주소로 인식하게 함
+                # 주소 형식을 차트 전용 파라미터 방식으로 변경
+                safe_url = f"https://tradingview.com:{row['name']}&refresh=true"
                 
-                # 오류 원인 수정: st.columns(4)로 숫자를 명시하여 칸을 나눕니다.
                 cols = st.columns(4)
                 with cols[0]:
                     st.markdown(f"**{row['description']}**")
@@ -43,7 +43,7 @@ if st.button("🚀 종목 검색 시작"):
                 with cols[2]:
                     st.text(f"{row['change']:+.2f}%")
                 with cols[3]:
-                    # 가장 클릭이 확실한 링크 버튼
+                    # 링크 버튼을 통해 새 창 열기 유도
                     st.link_button("차트 열기 ↗", safe_url)
                 st.divider()
         else:

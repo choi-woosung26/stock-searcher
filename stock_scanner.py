@@ -19,12 +19,16 @@ def run_scanner(market, min_vol):
         .select('name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'high_52week')
         .where(
             col('volume') > min_vol,
-            col('close') > col('SMA20'),
-            col('close') > col('BB.upper'),
-            col('close') >= col('high_52week') * 0.95
+            col('close') > col('SMA20'),    # 20일 이평선 위
+            col('close') > col('BB.upper'), # 볼린저밴드 상단 돌파
+            # 신고가 근처는 검색 후 파이썬으로 필터링
         )
+        .limit(200)
         .get_scanner_data()
     )
+    # 52주 신고가 5% 이내 → 파이썬에서 직접 필터
+    if data is not None and not data.empty and 'high_52week' in data.columns:
+        data = data[data['close'] >= data['high_52week'] * 0.95]
     return count, data
 
 def get_chart_url(ticker, market):

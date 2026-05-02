@@ -2,29 +2,24 @@ import streamlit as st
 from tradingview_screener import Query, col
 import pandas as pd
 import requests
-from datetime import datetime, timedelta
+import FinanceDataReader as fdr
 
 st.set_page_config(page_title="주식 스캐너", page_icon="📈", layout="wide")
 
 st.title("📈 한국 주식 종목 검색기")
 st.markdown("이동평균선 돌파 · 신고가 근처 종목을 찾습니다.")
 
-# ── KRX에서 한글 종목명 직접 가져오기 ─────────────────────
+# ── 한글 종목명 로딩 ──────────────────────────────
 @st.cache_data(ttl=3600)
 def load_krx_name_map():
     try:
-        import FinanceDataReader as fdr
-
         df = fdr.StockListing('KRX')
 
-        # 실제 컬럼명 자동 탐지
-        # 코드 컬럼: 'Code' 또는 'Symbol' 또는 '종목코드'
+        # 컬럼명 자동 탐지
         code_col = next((c for c in df.columns if c in ['Code', 'Symbol', '종목코드', 'code']), None)
-        # 이름 컬럼: 'Name' 또는 '종목명' 또는 '이름'
         name_col = next((c for c in df.columns if c in ['Name', '종목명', 'name', '이름']), None)
 
         if code_col is None or name_col is None:
-            # 컬럼명을 못 찾으면 실제 컬럼 목록을 경고로 표시
             st.warning(f"컬럼 탐지 실패. 실제 컬럼: {list(df.columns)}")
             return {}, set()
 
@@ -97,10 +92,10 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
     if min_price >= max_price:
         st.error("최소 금액이 최대 금액보다 작아야 합니다.")
     else:
-        with st.spinner("종목 정보 로딩 중..."):
+        with st.spinner("📋 종목 정보 로딩 중... (최초 1회만 시간이 걸립니다)"):
             name_map, exclude_set = load_krx_name_map()
 
-        with st.spinner("조건에 맞는 종목 검색 중..."):
+        with st.spinner("🔍 조건에 맞는 종목 검색 중..."):
             try:
                 data = run_scanner(ma_col, min_vol, min_price, max_price)
 
@@ -111,6 +106,7 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                         return str(val).split(':')[-1] if ':' in str(val) else str(val)
 
                     data['종목코드'] = data['name'].apply(extract_code)
+                    data['종목코드'] = data['종목코드'].astype(str).str.zfill(6)
 
                     # ETF·스팩·우선주 등 제외
                     before = len(data)
@@ -118,21 +114,17 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                         data = data[~data['종목코드'].isin(exclude_set)]
                     after = len(data)
 
-                    # 종목코드 앞 0 채우기 확실히 처리
-                    data['종목코드'] = data['종목코드'].astype(str).str.zfill(6)
-
                     # 한글 종목명 매핑
                     data['종목명'] = data['종목코드'].map(name_map)
 
-                    # 그래도 없는 경우 name에서 코드만 뽑아 재시도
+                    # 매핑 실패 종목 재시도
                     def find_name(row):
                         if pd.notna(row['종목명']):
                             return row['종목명']
-                        # KRX:005930 → 005930 으로 다시 시도
                         code = str(row['name']).split(':')[-1].zfill(6)
                         return name_map.get(code, str(row['name']).split(':')[-1])
 
-                   data['종목명'] = data.apply(find_name, axis=1)
+                    data['종목명'] = data.apply(find_name, axis=1)
 
                     if data.empty:
                         st.warning("⚠️ 조건에 맞는 종목이 없습니다. 조건을 완화해 보세요.")

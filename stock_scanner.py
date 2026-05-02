@@ -1,58 +1,79 @@
 import streamlit as st
 from tradingview_screener import Query, col
 import pandas as pd
-from pykrx import stock
-from datetime import datetime
+import requests
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="주식 스캐너", page_icon="📈", layout="wide")
 
 st.title("📈 한국 주식 종목 검색기")
 st.markdown("이동평균선 돌파 · 신고가 근처 종목을 찾습니다.")
 
-# ── 한글 종목명 + ETF/스팩 제외 목록 로딩 ─────────────────
-@st.cache_data(ttl=3600)  # 1시간 캐시 (매번 호출 방지)
-def load_krx_info():
-    today = datetime.today().strftime("%Y%m%d")
+# ── KRX에서 한글 종목명 직접 가져오기 ─────────────────────
+@st.cache_data(ttl=3600)
+def load_krx_name_map():
+    """KRX 데이터시스템에서 전종목 한글명 + ETF/스팩 제외 목록 로딩"""
     try:
-        # KOSPI + KOSDAQ 전체 종목
-        kospi  = stock.get_market_ticker_list(today, market="KOSPI")
-        kosdaq = stock.get_market_ticker_list(today, market="KOSDAQ")
-        all_tickers = list(kospi) + list(kosdaq)
+        # KRX OTP 발급
+        otp_url = "http://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd"
+        headers = {"Referer": "http://data.krx.co.kr/"}
 
-        # ETF 목록
-        etf_tickers = set(stock.get_etf_ticker_list(today))
+        # KOSPI + KOSDAQ 전종목 조회
+        otp_data = {
+            "mktId": "ALL",
+            "share": "1",
+            "money": "1",
+            "csvxls_isNo": "false",
+            "name": "fileDown",
+            "url": "dbms/MDC/STAT/standard/MDCSTAT01901"
+        }
+        otp = requests.post(otp_url, data=otp_data, headers=headers).text
 
-        # 종목코드 → 한글명 딕셔너리
-        name_map = {}
-        exclude_set = set()  # 제외할 종목코드
+        down_url = "http://data.krx.co.kr/comm/fileDn/download_csv/download.cmd"
+        resp = requests.post(down_url, data={"code": otp}, headers=headers)
+        resp.encoding = "euc-kr"
 
-        for ticker in all_tickers:
-            name = stock.get_market_ticker_name(ticker)
-            name_map[ticker] = name
+        from io import StringIO
+        df = pd.read_csv(StringIO(resp.text))
 
-            # ETF 제외
-            if ticker in etf_tickers:
-                exclude_set.add(ticker)
+        # 컬럼 확인 후 매핑
+        # 보통 컬럼: 표준코드, 단축코드, 한글 종목명, 영문 종목명, 시장구분, 소속부, 증권구분, ...
+        code_col = [c for c in df.columns if '단축' in c or '코드' in c and '표준' not in c][0]
+        name_col = [c for c in df.columns if '한글' in c and '종목' in c][0]
+        type_col = [c for c in df.columns if '증권구분' in c or '구분' in c][-1]
+
+        name_map = dict(zip(df[code_col].astype(str).str.zfill(6), df[name_col]))
+
+        # 제외 종목 (ETF, ETN, 스팩, 리츠, 우선주 등)
+        exclude_set = set()
+        for _, row in df.iterrows():
+            code = str(row[code_col]).zfill(6)
+            name = str(row[name_col])
+            sec_type = str(row[type_col]) if type_col else ''
+
+            # 증권구분이 주권(보통주)이 아닌 경우 제외
+            if sec_type and '주권' not in sec_type:
+                exclude_set.add(code)
                 continue
 
-            # 스팩(SPAC) 제외: 종목명에 '스팩' 포함
-            if '스팩' in name:
-                exclude_set.add(ticker)
+            # 스팩 제외
+            if '스팩' in name or 'SPAC' in name.upper():
+                exclude_set.add(code)
                 continue
 
-            # 우선주 제외: 종목코드 끝자리가 5 (예: 005935 삼성전자우)
-            if ticker.endswith('5') and len(ticker) == 6:
-                exclude_set.add(ticker)
+            # 우선주 제외 (코드 끝자리 5)
+            if code.endswith('5'):
+                exclude_set.add(code)
                 continue
 
-            # 기타 제외 키워드: 리츠, 인프라, 선박, 증권, 금융
-            exclude_keywords = ['리츠', 'REIT', '인프라', '선박투자', '환기', '수익증권']
+            # 기타 제외 키워드
+            exclude_keywords = ['리츠', '인프라', '환기', '수익증권', 'ETF', 'ETN', 'ELW']
             if any(kw in name for kw in exclude_keywords):
-                exclude_set.add(ticker)
+                exclude_set.add(code)
 
         return name_map, exclude_set
+
     except Exception as e:
-        st.warning(f"종목 정보 로딩 실패 (한글명 미표시): {e}")
         return {}, set()
 
 # ── 사이드바 설정 ──────────────────────────────────
@@ -60,7 +81,7 @@ st.sidebar.header("🔍 검색 설정")
 
 ma_period = st.sidebar.number_input(
     "📊 이동평균선 (일)",
-    min_value=1, max_value=500, value=20, step=1,
+    min_value=1, max_value=500, value=200, step=1,
     help="종가가 이 이평선보다 높은 종목을 검색합니다."
 )
 ma_col = f"SMA{ma_period}"
@@ -86,7 +107,6 @@ def run_scanner(ma_col, min_vol, min_price, max_price):
         .limit(300)
         .get_scanner_data()
     )
-    # 52주 신고가 5% 이내 필터
     if data is not None and not data.empty and 'price_52_week_high' in data.columns:
         data = data[data['close'] >= data['price_52_week_high'] * 0.95]
     return data
@@ -100,8 +120,8 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
     if min_price >= max_price:
         st.error("최소 금액이 최대 금액보다 작아야 합니다.")
     else:
-        with st.spinner("종목 정보 및 데이터 로딩 중..."):
-            name_map, exclude_set = load_krx_info()
+        with st.spinner("종목 정보 로딩 중..."):
+            name_map, exclude_set = load_krx_name_map()
 
         with st.spinner("조건에 맞는 종목 검색 중..."):
             try:
@@ -109,26 +129,31 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
 
                 if data is not None and not data.empty:
 
-                    # 종목코드 추출 (name 컬럼: "KRX:005930" 형태)
-                    def extract_code(name_val):
-                        if ':' in str(name_val):
-                            return str(name_val).split(':')[-1]
-                        return str(name_val)
+                    # 종목코드 추출
+                    def extract_code(val):
+                        return str(val).split(':')[-1] if ':' in str(val) else str(val)
 
                     data['종목코드'] = data['name'].apply(extract_code)
 
                     # ETF·스팩·우선주 등 제외
                     before = len(data)
-                    data = data[~data['종목코드'].isin(exclude_set)]
+                    if exclude_set:
+                        data = data[~data['종목코드'].isin(exclude_set)]
                     after = len(data)
 
                     # 한글 종목명 매핑
-                    data['종목명'] = data['종목코드'].map(name_map).fillna(data['name'])
+                    data['종목명'] = data['종목코드'].map(name_map)
+                    # 한글명 못 가져온 경우 영문코드로 표시
+                    data['종목명'] = data['종목명'].fillna(data['name'])
 
                     if data.empty:
                         st.warning("⚠️ 조건에 맞는 종목이 없습니다. 조건을 완화해 보세요.")
                     else:
-                        st.success(f"✅ {after}개 종목 발견  (ETF·스팩·우선주 등 {before - after}개 제외)")
+                        excluded = before - after
+                        msg = f"✅ {after}개 종목 발견"
+                        if excluded > 0:
+                            msg += f"  (ETF·스팩·우선주 등 {excluded}개 제외)"
+                        st.success(msg)
 
                         # 표시용 컬럼 정리
                         show_cols = ['종목명', '종목코드', 'close', 'volume', 'change', ma_col, 'price_52_week_high']
@@ -159,9 +184,8 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                         st.subheader("📊 차트 바로가기")
                         cols_ui = st.columns(5)
                         for i, (_, row) in enumerate(data.iterrows()):
-                            ticker = row['name']
+                            url = get_chart_url(row['name'])
                             label = row['종목명']
-                            url = get_chart_url(ticker)
                             with cols_ui[i % 5]:
                                 st.link_button(f"📈 {label}", url, use_container_width=True)
 

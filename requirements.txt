@@ -2,5 +2,5 @@ streamlit
 tradingview-screener
 pandas
 requests
-lxml
-html5lib
+finance-datareader
+

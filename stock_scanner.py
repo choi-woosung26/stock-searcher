@@ -16,19 +16,18 @@ def run_scanner(market, min_vol):
     count, data = (
         Query()
         .set_markets(market_key)
-        .select('name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'high_52week')
+        .select('name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'price_52_week_high')
         .where(
             col('volume') > min_vol,
-            col('close') > col('SMA20'),    # 20일 이평선 위
-            col('close') > col('BB.upper'), # 볼린저밴드 상단 돌파
-            # 신고가 근처는 검색 후 파이썬으로 필터링
+            col('close') > col('SMA20'),     # 20일 이평선 위
+            col('close') > col('BB.upper'),  # 볼린저밴드 상단 돌파
         )
         .limit(200)
         .get_scanner_data()
     )
-    # 52주 신고가 5% 이내 → 파이썬에서 직접 필터
-    if data is not None and not data.empty and 'high_52week' in data.columns:
-        data = data[data['close'] >= data['high_52week'] * 0.95]
+    # 52주 신고가 5% 이내 → pandas로 필터링
+    if data is not None and not data.empty and 'price_52_week_high' in data.columns:
+        data = data[data['close'] >= data['price_52_week_high'] * 0.95]
     return count, data
 
 def get_chart_url(ticker, market):
@@ -47,8 +46,8 @@ if st.button("종목 검색 시작"):
             if data is not None and not data.empty:
                 st.success(f"조건에 맞는 종목 {len(data)}개를 찾았습니다!")
 
-                display_cols = [c for c in ['name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'high_52week'] if c in data.columns]
-                fmt_cols = {c: "{:.2f}" for c in ['close', 'change', 'SMA20', 'BB.upper'] if c in data.columns}
+                display_cols = [c for c in ['name', 'close', 'volume', 'change', 'SMA20', 'BB.upper', 'price_52_week_high'] if c in data.columns]
+                fmt_cols = {c: "{:.2f}" for c in ['close', 'change', 'SMA20', 'BB.upper', 'price_52_week_high'] if c in data.columns}
                 st.dataframe(
                     data[display_cols].style.format(fmt_cols),
                     use_container_width=True

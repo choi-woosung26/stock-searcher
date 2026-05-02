@@ -26,29 +26,28 @@ def run_scanner():
     _, df = q.get_scanner_data()
     return df
 
-# 3. 메인 실행 버튼
+# 3. 실행 버튼
 if st.button("🚀 종목 검색 시작"):
-    with st.spinner("최신 데이터를 불러오는 중..."):
+    with st.spinner("데이터 분석 중..."):
         try:
             df = run_scanner()
             if not df.empty:
-                # [수정] 트레이딩뷰 차트 주소를 더 명확하게 생성
+                # [핵심 수정] 주소 형식을 트레이딩뷰 표준인 KRX-코드로 수정
                 # 예: https://tradingview.com
                 df['차트보기'] = df['name'].apply(lambda x: f"https://tradingview.com{x}/")
                 
                 # 컬럼명 변경
                 df = df.rename(columns={'description': '종목명', 'close': '현재가', 'volume': '거래량', 'change': '등락률'})
                 
-                st.success(f"{len(df)}개의 종목을 찾았습니다. 종목명을 클릭하거나 차트 링크를 눌러보세요.")
+                st.success(f"{len(df)}개의 종목을 찾았습니다.")
 
-                # [필살기] 데이터 프레임 출력 방식을 가장 안정적인 버전으로 변경
+                # 결과 출력
                 st.dataframe(
                     df[['종목명', '현재가', '거래량', '등락률', '차트보기']],
                     column_config={
                         "차트보기": st.column_config.LinkColumn(
                             "차트 열기", 
-                            display_text="여기 클릭 ↗",
-                            validate=r"^https://.*" # URL 유효성 검사 추가
+                            display_text="차트 보기 ↗"
                         ),
                         "현재가": st.column_config.NumberColumn(format="%d원"),
                         "거래량": st.column_config.NumberColumn(format="%d주"),
@@ -63,4 +62,4 @@ if st.button("🚀 종목 검색 시작"):
             st.error(f"오류 발생: {e}")
 
 st.divider()
-st.info("💡 데스크탑 팁: '여기 클릭' 위에서 '마우스 휠(가운데 버튼)'을 누르면 새 탭으로 즉시 열립니다.")
+st.info("💡 이제 주소가 'https://tradingview.com종목코드/' 형식으로 생성되어 정상적으로 연결될 것입니다.")

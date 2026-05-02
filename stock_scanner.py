@@ -118,10 +118,21 @@ if st.button("🔍 종목 검색 시작", use_container_width=True):
                         data = data[~data['종목코드'].isin(exclude_set)]
                     after = len(data)
 
+                    # 종목코드 앞 0 채우기 확실히 처리
+                    data['종목코드'] = data['종목코드'].astype(str).str.zfill(6)
+
                     # 한글 종목명 매핑
                     data['종목명'] = data['종목코드'].map(name_map)
-                    # 한글명 못 가져온 경우 영문코드로 표시
-                    data['종목명'] = data['종목명'].fillna(data['name'])
+
+                    # 그래도 없는 경우 name에서 코드만 뽑아 재시도
+                    def find_name(row):
+                        if pd.notna(row['종목명']):
+                            return row['종목명']
+                        # KRX:005930 → 005930 으로 다시 시도
+                        code = str(row['name']).split(':')[-1].zfill(6)
+                        return name_map.get(code, str(row['name']).split(':')[-1])
+
+                   data['종목명'] = data.apply(find_name, axis=1)
 
                     if data.empty:
                         st.warning("⚠️ 조건에 맞는 종목이 없습니다. 조건을 완화해 보세요.")

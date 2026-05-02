@@ -15,48 +15,42 @@ def load_krx_name_map():
     try:
         from io import BytesIO
 
-        gen_url = 'http://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd'
-        headers = {
-            'Referer': 'http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020101',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
-        }
-        params = {
-            'mktId': 'ALL',
-            'share': '1',
-            'csvxls_isNo': 'false',
-            'name': 'fileDown',
-            'url': 'dbms/MDC/STAT/standard/MDCSTAT01901'
-        }
+        # 네이버 금융 전종목 리스트 (KOSPI + KOSDAQ)
+        dfs = []
+        for market in ['stockMkt', 'kosdaqMkt']:
+            url = f'https://finance.naver.com/siseinfo/excel/downSise.nhn?&market={market}'
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://finance.naver.com'
+            }
+            r = requests.get(url, headers=headers)
+            df = pd.read_html(BytesIO(r.content), encoding='euc-kr')[0]
+            dfs.append(df)
 
-        # ✅ GET으로 OTP 받기
-        r = requests.get(url=gen_url, params=params, headers=headers)
+        df = pd.concat(dfs, ignore_index=True)
 
-        # ✅ BytesIO + cp949로 CSV 읽기
-        down_url = 'http://data.krx.co.kr/comm/fileDn/download_csv/download.cmd'
-        r2 = requests.post(url=down_url, data={'code': r.content}, headers=headers)
-        df = pd.read_csv(BytesIO(r2.content), encoding='cp949')
+        # 컬럼 확인 후 코드/이름 추출
+        # 네이버 컬럼: '종목코드', '종목명' 또는 유사한 이름
+        code_col = [c for c in df.columns if '코드' in str(c)][0]
+        name_col = [c for c in df.columns if '종목명' in str(c) or '이름' in str(c)][0]
 
-        name_map = dict(zip(
-            df['단축코드'].astype(str).str.zfill(6),
-            df['한글 종목약명']
-        ))
+        df[code_col] = df[code_col].astype(str).str.zfill(6)
 
+        name_map = dict(zip(df[code_col], df[name_col]))
+
+        # 제외 종목
         exclude_set = set()
         for _, row in df.iterrows():
-            code = str(row['단축코드']).zfill(6)
-            name = str(row['한글 종목약명'])
-            sec_type = str(row.get('증권구분', ''))
+            code = str(row[code_col]).zfill(6)
+            name = str(row[name_col])
 
-            if '주권' not in sec_type:
-                exclude_set.add(code)
-                continue
             if '스팩' in name or 'SPAC' in name.upper():
                 exclude_set.add(code)
                 continue
             if code.endswith('5'):
                 exclude_set.add(code)
                 continue
-            for kw in ['리츠', '인프라', '환기', '수익증권']:
+            for kw in ['리츠', '인프라', '환기', '수익증권', 'ETF', 'ETN', 'ELW']:
                 if kw in name:
                     exclude_set.add(code)
                     break

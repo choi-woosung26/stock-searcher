@@ -1,5 +1,4 @@
-전체 코드를 요청사항에 맞게 완전히 새로 작성해드릴게요.
-pythonimport streamlit as st
+import streamlit as st
 from tradingview_screener import Query, col
 import pandas as pd
 

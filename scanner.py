@@ -3,9 +3,9 @@ from tradingview_screener import Query, Column
 import pandas as pd
 
 st.set_page_config(page_title="한국주식 스캐너", layout="wide")
-st.title("🇰🇷 한국 시장 종목 검색기 (HTML 링크 버전)")
+st.title("🇰🇷 한국 시장 종목 검색기 (최종 링크 수정)")
 
-# 사이드바 설정
+# 사이드바
 st.sidebar.header("🔍 검색 설정")
 min_vol = st.sidebar.number_input("최소 거래량", value=100000)
 min_price = st.sidebar.number_input("최소 주가", value=1000)
@@ -29,21 +29,29 @@ if st.button("🚀 종목 검색 시작"):
     try:
         df = run_scanner()
         if not df.empty:
-            # [최종 해결책] 텍스트 기반의 HTML 링크를 생성합니다.
-            # 이 방식은 Streamlit의 LinkColumn 버그를 완전히 무시합니다.
-            def make_html_link(ticker):
-                url = f"https://tradingview.com{ticker}/"
-                return f'<a href="{url}" target="_blank">차트열기 ↗</a>'
+            # [방법 변경] 일반 주소가 아닌 트레이딩뷰의 차트 위젯 주소를 사용합니다.
+            # 이 주소는 중간에 ?가 들어가서 브라우저가 숫자를 주소로 오해하지 못하게 합니다.
+            def make_safe_link(ticker):
+                return f"https://tradingview.com:{ticker}"
 
-            df['차트보기'] = df['name'].apply(make_html_link)
+            df['차트보기'] = df['name'].apply(make_safe_link)
             df = df.rename(columns={'description': '종목명', 'close': '현재가', 'volume': '거래량', 'change': '등락률'})
             
-            # 보기 좋게 컬럼 순서 조정
-            display_df = df[['종목명', '현재가', '거래량', '등락률', '차트보기']]
-
-            # 일반 표(st.write) 대신 HTML을 지원하는 형태로 출력
-            st.write("💡 **차트열기** 파란색 글자를 클릭하세요. (안 되면 마우스 우클릭 -> 새 탭에서 열기)")
-            st.write(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+            # 이번에는 st.dataframe 대신 링크가 가장 잘 작동하는 마크다운 테이블을 사용합니다.
+            st.write("### 검색 결과")
+            st.info("💡 종목별 '차트보기' 링크를 클릭하세요.")
+            
+            # 마크다운 방식으로 링크를 띄워 브라우저가 새 주소임을 인식하게 함
+            for i, row in df.iterrows():
+                col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+                with col1:
+                    st.markdown(f"**[{row['종목명']}]({row['차트보기']})**")
+                with col2:
+                    st.text(f"{row['현재가']:,}원")
+                with col3:
+                    st.text(f"{row['등락률']:+.2f}%")
+                with col4:
+                    st.link_button("차트열기", row['차트보기'])
             
         else:
             st.warning("조건에 맞는 종목이 없습니다.")

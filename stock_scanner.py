@@ -2,7 +2,7 @@ import streamlit as st
 from tradingview_screener import Query, Column
 
 st.set_page_config(page_title="한국주식 스캐너", layout="wide")
-st.title("🇰🇷 한국 시장 종목 검색기 (버전 5.2 - 캐시 강제 삭제)")
+st.title("🇰🇷 한국 시장 종목 검색기 (버전 5.3 - 팝업 차단 해결)")
 
 # 사이드바 설정
 st.sidebar.header("🔍 검색 설정")
@@ -28,23 +28,23 @@ if st.button("🚀 종목 검색 시작"):
     try:
         df = run_scanner()
         if not df.empty:
-            st.success(f"{len(df)}개의 종목을 찾았습니다.")
+            st.success(f"{len(df)}개의 종목을 찾았습니다. 종목명을 클릭하세요.")
             
             for i, row in df.iterrows():
-                # [필살기] 주소 뒤에 의미 없는 숫자를 붙여 브라우저가 매번 새 주소로 인식하게 함
-                # 주소 형식을 차트 전용 파라미터 방식으로 변경
-                safe_url = f"https://tradingview.com:{row['name']}&refresh=true"
+                # 브라우저가 포트로 오해하지 않도록 하이픈 조합 주소 사용
+                safe_url = f"https://tradingview.com{row['name']}/"
                 
                 cols = st.columns(4)
                 with cols[0]:
-                    st.markdown(f"**{row['description']}**")
+                    # [핵심] 버튼 대신 마크다운 링크를 사용하여 브라우저 차단을 피함
+                    st.markdown(f"### [{row['description']}]({safe_url})")
                 with cols[1]:
-                    st.text(f"{row['close']:,}원")
+                    st.write(f"현재가: **{row['close']:,}원**")
                 with cols[2]:
-                    st.text(f"{row['change']:+.2f}%")
+                    st.write(f"등락률: **{row['change']:+.2f}%**")
                 with cols[3]:
-                    # 링크 버튼을 통해 새 창 열기 유도
-                    st.link_button("차트 열기 ↗", safe_url)
+                    # 보조 링크
+                    st.write(f"[차트 열기 ↗]({safe_url})")
                 st.divider()
         else:
             st.warning("조건에 맞는 종목이 없습니다.")

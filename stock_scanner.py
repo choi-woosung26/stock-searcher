@@ -15,17 +15,26 @@ def load_krx_name_map():
     try:
         import FinanceDataReader as fdr
 
-        # KRX 전종목 한글명 한 줄로 가져오기
         df = fdr.StockListing('KRX')
 
-        # 컬럼: Symbol(종목코드), Name(한글종목명), Market 등
-        df['Symbol'] = df['Symbol'].astype(str).str.zfill(6)
-        name_map = dict(zip(df['Symbol'], df['Name']))
+        # 실제 컬럼명 자동 탐지
+        # 코드 컬럼: 'Code' 또는 'Symbol' 또는 '종목코드'
+        code_col = next((c for c in df.columns if c in ['Code', 'Symbol', '종목코드', 'code']), None)
+        # 이름 컬럼: 'Name' 또는 '종목명' 또는 '이름'
+        name_col = next((c for c in df.columns if c in ['Name', '종목명', 'name', '이름']), None)
+
+        if code_col is None or name_col is None:
+            # 컬럼명을 못 찾으면 실제 컬럼 목록을 경고로 표시
+            st.warning(f"컬럼 탐지 실패. 실제 컬럼: {list(df.columns)}")
+            return {}, set()
+
+        df[code_col] = df[code_col].astype(str).str.zfill(6)
+        name_map = dict(zip(df[code_col], df[name_col]))
 
         exclude_set = set()
         for _, row in df.iterrows():
-            code = str(row['Symbol']).zfill(6)
-            name = str(row['Name'])
+            code = str(row[code_col]).zfill(6)
+            name = str(row[name_col])
 
             if '스팩' in name or 'SPAC' in name.upper():
                 exclude_set.add(code)

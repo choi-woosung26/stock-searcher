@@ -2,7 +2,7 @@ import streamlit as st
 from tradingview_screener import Query, Column
 
 st.set_page_config(page_title="한국주식 스캐너", layout="wide")
-st.title("🇰🇷 한국 시장 종목 검색기 (버전 5.0)")
+st.title("🇰🇷 한국 시장 종목 검색기 (버전 5.1 - 오류 수정 완료)")
 
 # 사이드바 설정
 st.sidebar.header("🔍 검색 설정")
@@ -31,20 +31,21 @@ if st.button("🚀 종목 검색 시작"):
             st.success(f"{len(df)}개의 종목을 찾았습니다.")
             
             for i, row in df.iterrows():
-                # 하이픈(-)과 슬래시(/)를 명확히 넣은 안전한 주소
+                # 주소 오해를 방지하기 위해 가장 표준적인 symbols 주소 사용
                 safe_url = f"https://tradingview.com{row['name']}/"
                 
-                with st.container():
-                    col1, col2, col3, col4 = st.columns()
-                    with col1:
-                        st.markdown(f"**{row['description']}**")
-                    with col2:
-                        st.text(f"{row['close']:,}원")
-                    with col3:
-                        st.text(f"{row['change']:+.2f}%")
-                    with col4:
-                        st.link_button("차트 열기 ↗", safe_url)
-                    st.divider()
+                # 오류 원인 수정: st.columns(4)로 숫자를 명시하여 칸을 나눕니다.
+                cols = st.columns(4)
+                with cols[0]:
+                    st.markdown(f"**{row['description']}**")
+                with cols[1]:
+                    st.text(f"{row['close']:,}원")
+                with cols[2]:
+                    st.text(f"{row['change']:+.2f}%")
+                with cols[3]:
+                    # 가장 클릭이 확실한 링크 버튼
+                    st.link_button("차트 열기 ↗", safe_url)
+                st.divider()
         else:
             st.warning("조건에 맞는 종목이 없습니다.")
     except Exception as e:

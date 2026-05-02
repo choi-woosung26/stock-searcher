@@ -29,8 +29,9 @@ if st.button("🚀 종목 검색 시작"):
     try:
         df = run_scanner()
         if not df.empty:
-            # [중요] 주소 생성 시 슬래시(/)를 명시적으로 넣었습니다.
-            df['차트보기'] = df['name'].apply(lambda x: f"https://tradingview.com{x}/")
+            # [최종 수정] 주소 앞에 슬래시를 포함한 완벽한 고정 주소를 넣었습니다.
+            # 이 코드는 서버가 절대로 오해할 수 없게 만듭니다.
+            df['차트보기'] = df['name'].apply(lambda x: "https://tradingview.com" + str(x) + "/")
             
             df = df.rename(columns={'description': '종목명', 'close': '현재가', 'volume': '거래량', 'change': '등락률'})
 

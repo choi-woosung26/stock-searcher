@@ -13,36 +13,19 @@ st.markdown("이동평균선 돌파 · 신고가 근처 종목을 찾습니다."
 @st.cache_data(ttl=3600)
 def load_krx_name_map():
     try:
-        from io import BytesIO
+        import FinanceDataReader as fdr
 
-        # 네이버 금융 전종목 리스트 (KOSPI + KOSDAQ)
-        dfs = []
-        for market in ['stockMkt', 'kosdaqMkt']:
-            url = f'https://finance.naver.com/siseinfo/excel/downSise.nhn?&market={market}'
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': 'https://finance.naver.com'
-            }
-            r = requests.get(url, headers=headers)
-            df = pd.read_html(BytesIO(r.content), encoding='euc-kr')[0]
-            dfs.append(df)
+        # KRX 전종목 한글명 한 줄로 가져오기
+        df = fdr.StockListing('KRX')
 
-        df = pd.concat(dfs, ignore_index=True)
+        # 컬럼: Symbol(종목코드), Name(한글종목명), Market 등
+        df['Symbol'] = df['Symbol'].astype(str).str.zfill(6)
+        name_map = dict(zip(df['Symbol'], df['Name']))
 
-        # 컬럼 확인 후 코드/이름 추출
-        # 네이버 컬럼: '종목코드', '종목명' 또는 유사한 이름
-        code_col = [c for c in df.columns if '코드' in str(c)][0]
-        name_col = [c for c in df.columns if '종목명' in str(c) or '이름' in str(c)][0]
-
-        df[code_col] = df[code_col].astype(str).str.zfill(6)
-
-        name_map = dict(zip(df[code_col], df[name_col]))
-
-        # 제외 종목
         exclude_set = set()
         for _, row in df.iterrows():
-            code = str(row[code_col]).zfill(6)
-            name = str(row[name_col])
+            code = str(row['Symbol']).zfill(6)
+            name = str(row['Name'])
 
             if '스팩' in name or 'SPAC' in name.upper():
                 exclude_set.add(code)
